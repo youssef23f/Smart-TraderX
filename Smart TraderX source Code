@@ -1,0 +1,195 @@
+import random
+import tkinter as tk
+from tkinter import Canvas, Scrollbar, messagebox, ttk
+import yfinance as yf
+import matplotlib.pyplot as plt
+import mplfinance as mpf
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import string
+
+# Main window setup
+root = tk.Tk()
+root.title("Smart TraderX")
+root.geometry("900x700")
+root.configure(bg="#2C3E50")
+
+# Scrollable main frame
+main_frame = tk.Frame(root)
+main_frame.pack(fill=tk.BOTH, expand=1)
+
+canvas = tk.Canvas(main_frame, bg="#2C3E50")
+canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=1)
+
+scrollbar = tk.Scrollbar(main_frame, orient=tk.VERTICAL, command=canvas.yview)
+scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+canvas.configure(yscrollcommand=scrollbar.set)
+
+content_frame = tk.Frame(canvas, bg="#2C3E50")
+canvas.create_window((0, 0), window=content_frame, anchor="nw")
+
+def update_scroll_region(event):
+    canvas.configure(scrollregion=canvas.bbox("all"))
+
+content_frame.bind("<Configure>", update_scroll_region)
+
+# Generate password
+def generate_password():
+    number = ''.join(random.choices("0123456789", k=8))
+    symbols = random.choices(string.punctuation, k=7)
+    mixed_password = ''.join(n + s for n, s in zip(number, symbols)) + number[-1]
+    return number, mixed_password
+
+correct_password, displayed_password = generate_password()
+
+# Password input section
+password_label = tk.Label(content_frame, text="Enter only the numbers from this password:", font=("Arial", 12), bg="#2C3E50", fg="white")
+password_label.pack(pady=5)
+
+displayed_password_label = tk.Label(content_frame, text=displayed_password, font=("Arial", 14, "bold"), bg="#E74C3C", fg="white")
+displayed_password_label.pack(pady=5)
+
+password_entry = tk.Entry(content_frame, font=("Arial", 12), width=20)
+password_entry.pack(pady=5)
+
+def check_password():
+    user_input = password_entry.get()
+    if user_input == correct_password:
+        messagebox.showinfo("Success", "Welcome to the system!")
+    else:
+        messagebox.showerror("Error", "Wrong password!")
+
+check_button = tk.Button(content_frame, text="Verify", font=("Arial", 12), bg="#1ABC9C", fg="white", command=check_password)
+check_button.pack(pady=5)
+
+# App title
+title_label = tk.Label(content_frame, text="Smart TraderX", font=("Arial", 20, "bold"), bg="#2C3E50", fg="white")
+title_label.pack(pady=10)
+
+# Stock symbol input
+stock_label = tk.Label(content_frame, text="Enter Stock Symbol:", font=("Arial", 12), bg="#2C3E50", fg="white")
+stock_label.pack(pady=5)
+
+stock_entry = tk.Entry(content_frame, font=("Arial", 12), width=20)
+stock_entry.pack(pady=5)
+
+# Duration selection
+duration_label = tk.Label(content_frame, text="Select Duration:", font=("Arial", 12), bg="#2C3E50", fg="white")
+duration_label.pack(pady=5)
+
+duration_options = ["7d", "1mo", "3mo", "6mo", "1y"]
+duration_var = tk.StringVar(value="7d")
+duration_menu = ttk.Combobox(content_frame, textvariable=duration_var, values=duration_options)
+duration_menu.pack(pady=5)
+
+# Table for stock data
+columns = ("Date", "Open", "High", "Low", "Close", "Volume")
+stock_table = ttk.Treeview(content_frame, columns=columns, show="headings")
+
+for col in columns:
+    stock_table.heading(col, text=col)
+    stock_table.column(col, width=120, anchor="center")
+
+stock_table.pack(pady=10)
+
+# Fetch stock data function
+def fetch_stock_data():
+    stock_symbol = stock_entry.get().strip().upper()
+    duration = duration_var.get()
+
+    if not stock_symbol:
+        messagebox.showerror("Error", "Please enter a stock symbol")
+        return
+
+    try:
+        stock = yf.Ticker(stock_symbol)
+        stock_info = stock.history(period=duration)
+
+        if stock_info.empty:
+            messagebox.showerror("Error", "No data found for stock symbol")
+            return
+
+        stock_table.delete(*stock_table.get_children())
+
+        for index, row in stock_info.iterrows():
+            stock_table.insert("", "end", values=(
+                index.date(),
+                f"{row['Open']:.2f} $",
+                f"{row['High']:.2f} $",
+                f"{row['Low']:.2f} $",
+                f"{row['Close']:.2f} $",
+                int(row['Volume'])
+            ))
+
+        global stock_data
+        stock_data = stock_info
+    
+    except Exception as e:
+        messagebox.showerror("Error", f"An error occurred: {e}")
+
+# Plot functions
+def plot_chart(chart_type):
+    if 'stock_data' not in globals():
+        messagebox.showerror("Error", "Please fetch stock data first!")
+        return
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+
+    if chart_type == "Close Price":
+        stock_data['Close'].plot(ax=ax, color='blue', linewidth=2)
+        ax.set_title("Close Price Chart")
+    elif chart_type == "OHLC":
+        _extracted_from_plot_chart_12(ax)
+    elif chart_type == "Candlestick":
+        mpf.plot(stock_data, type='candle', style='charles', ax=ax)
+        ax.set_title("Candlestick Chart")
+
+    ax.set_ylabel("Price ($)")
+    ax.grid()
+    show_plot(fig)
+
+
+# TODO Rename this here and in `plot_chart`
+def _extracted_from_plot_chart_12(ax):
+    ax.plot(stock_data.index, stock_data['Open'], label="Open", color="green", linestyle="dashed")
+    ax.plot(stock_data.index, stock_data['High'], label="High", color="blue")
+    ax.plot(stock_data.index, stock_data['Low'], label="Low", color="red")
+    ax.plot(stock_data.index, stock_data['Close'], label="Close", color="black")
+    ax.set_title("OHLC Prices")
+    ax.legend()
+
+# Function to show plot
+def show_plot(fig):
+    for widget in chart_frame.winfo_children():
+        widget.destroy()
+
+    canvas = FigureCanvasTkAgg(fig, master=chart_frame)
+    canvas.draw()
+    canvas.get_tk_widget().pack()
+
+# Chart display area
+chart_frame = tk.Frame(content_frame, bg="#2C3E50")
+chart_frame.pack(pady=20)
+
+# Chart buttons
+btn_frame = tk.Frame(content_frame, bg="#2C3E50")
+btn_frame.pack(pady=10)
+
+btn_close_price = tk.Button(btn_frame, text="Close Price Chart", font=("Arial", 12), bg="#3498DB", fg="white", command=lambda: plot_chart("Close Price"))
+btn_close_price.grid(row=0, column=0, padx=10)
+
+btn_ohlc_chart = tk.Button(btn_frame, text="OHLC Chart", font=("Arial", 12), bg="#27AE60", fg="white", command=lambda: plot_chart("OHLC"))
+btn_ohlc_chart.grid(row=0, column=1, padx=10)
+
+btn_candlestick_chart = tk.Button(btn_frame, text="Candlestick Chart", font=("Arial", 12), bg="#E74C3C", fg="white", command=lambda: plot_chart("Candlestick"))
+btn_candlestick_chart.grid(row=0, column=2, padx=10)
+
+fetch_button = tk.Button(content_frame, text="Fetch Data", font=("Arial", 12), bg="#1ABC9C", fg="white", command=fetch_stock_data)
+fetch_button.pack(pady=10)
+
+# Exit button
+exit_button = tk.Button(content_frame, text="Exit", font=("Arial", 12), bg="#E74C3C", fg="white", command=root.quit)
+exit_button.pack(pady=20)
+
+
+root.mainloop()
